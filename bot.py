@@ -1,45 +1,83 @@
-import logging
-from telegram.ext import Application, CommandHandler, ChatJoinRequestHandler
-from config import config
-from handlers import handle_join_request, handle_stats, handle_broadcast, handle_list_users
+"""
+bot.py
+──────
+Entry point.  Run with:  python bot.py
 
-# We use the logger configured in config.py or the root one
+Commands are registered per-admin via BotCommandScopeChat so they
+appear in the "/" suggestion list only for admin users.
+"""
+
+import asyncio
+import logging
+
+from telegram import BotCommand, BotCommandScopeChat
+from telegram.ext import Application, ChatJoinRequestHandler, CommandHandler
+
+from bot.config import settings
+from bot.handlers.admin import handle_broadcast, handle_start, handle_stats, handle_users
+from bot.handlers.join import handle_join_request
+
 logger = logging.getLogger(__name__)
 
-async def main():
-    """Start the Telegram bot and register all event handlers."""
-    
-    logger.info("Initializing bot setup...")
-
-    # Build the application using the token from config
-    application = Application.builder().token(config["BOT_TOKEN"]).build()
-
-    # Register handlers
-    # Handle incoming join requests to approval-needed communities
-    application.add_handler(ChatJoinRequestHandler(handle_join_request))
-    
-    # Administrative commands
-    application.add_handler(CommandHandler("stats", handle_stats))
-    application.add_handler(CommandHandler("broadcast", handle_broadcast))
-    application.add_handler(CommandHandler("users", handle_list_users))
+# Commands shown only to admins when they type "/"
+_ADMIN_COMMANDS = [
+    BotCommand("start",     "Show all available commands"),
+    BotCommand("stats",     "User statistics"),
+    BotCommand("users",     "List registered users"),
+    BotCommand("broadcast", "Send a message to all users"),
+]
 
 
-    # Log startup success
-    logger.info("Bot started successfully. Waiting for events...")
+async def _post_init(app: Application) -> None:
+    """
+    Called once after the bot connects.
+    Registers admin-scoped commands so "/" shows suggestions only for admins.
+    """
+    for admin_id in settings.admin_ids:
+        try:
+            await app.bot.set_my_commands(
+                commands=_ADMIN_COMMANDS,
+                scope=BotCommandScopeChat(chat_id=admin_id),
+            )
+            logger.info("Commands registered for admin %d.", admin_id)
+        except Exception as exc:
+            # Admin may not have started the bot yet – harmless
+            logger.warning("Could not set commands for admin %d: %s", admin_id, exc)
 
-    # In modern versions of PTB, run_polling can sometimes conflict with how
-    # asyncio handles the loop in certain environments. Using an explicit context manager
-    # or the built-in run_polling works if started correctly.
-    async with application:
-        await application.start()
-        await application.updater.start_polling()
-        # Keep it running until a stop signal
-        await asyncio.Event().wait()
+
+def build_app() -> Application:
+    app = (
+        Application.builder()
+        .token(settings.bot_token)
+        .post_init(_post_init)          # registers "/" suggestions on startup
+        .build()
+    )
+
+    # Join requests (public)
+    app.add_handler(ChatJoinRequestHandler(handle_join_request))
+
+    # Admin commands
+    app.add_handler(CommandHandler("start",     handle_start))
+    app.add_handler(CommandHandler("stats",     handle_stats))
+    app.add_handler(CommandHandler("users",     handle_users))
+    app.add_handler(CommandHandler("broadcast", handle_broadcast))
+
+    return app
+
+
+async def _run() -> None:
+    app = build_app()
+    async with app:
+        await app.updater.start_polling(drop_pending_updates=True)
+        await app.start()
+        logger.info("Bot is running. Press Ctrl+C to stop.")
+        await asyncio.Event().wait()    # block until KeyboardInterrupt / SIGTERM
+
 
 if __name__ == "__main__":
+    logger.info("Bot starting… admins=%s", settings.admin_ids)
     try:
-        import asyncio
-        asyncio.run(main())
+        # asyncio.run() creates a fresh event loop – required on Python 3.12+
+        asyncio.run(_run())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot stopped by user.")
-
+        logger.info("Bot stopped.")

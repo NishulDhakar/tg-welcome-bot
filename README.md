@@ -1,68 +1,101 @@
-# Telegram Private Channel Bot
+# Telegram Welcome Bot
 
-A simple, async Python Telegram bot to manage join requests, welcome new members, and provide admin statistics and broadcasting capabilities.
+Auto-accepts join requests for a private channel and sends a welcome DM.  
+Admins can broadcast a message to all registered users.
+
+---
 
 ## Features
-- ✅ **Automatic Join Request Approval**: Fast and reliable member processing.
-- 💬 **Personalized Welcome Messages**: DM greetings to new members.
-- 📊 **Admin Stats**: View total users and today's join count.
-- 📢 **Broadcasting**: Send messages to all registered users from the admin panel.
-- 🔐 **Supabase Integration**: Secure, cloud-hosted user database.
 
-## Prerequisites
-- **Python**: 3.11+
-- **Database**: Supabase (Free tier works perfectly)
-- **Telegram**: A bot token from @BotFather
+| Feature | Description |
+|---|---|
+| **Auto-approve** | Instantly approves every join request to your channel |
+| **Welcome DM** | Sends a personalized DM to each new member |
+| **User DB** | Saves every member to Supabase |
+| `/stats` | Total users + joined today |
+| `/users` | List of registered users (admin only) |
+| `/broadcast` | Send a DM to all users (admin only) |
 
-## Setup Instructions
+---
 
-### 1. Database Configuration
-Go to your **Supabase SQL Editor** and run the following code to create the `users` table:
+## Setup
 
-```sql
-create table users (
-  id uuid default gen_random_uuid() primary key,
-  telegram_id bigint unique not null,
-  username text,
-  first_name text,
-  last_name text,
-  status text default 'approved',
-  source text default 'main_bot',
-  joined_at timestamp with time zone default now(),
-  metadata jsonb default '{}'::jsonb
-);
-```
+### 1. Clone & install
 
-### 2. Environment Setup
-Copy the example environment file and fill in your unique credentials:
 ```bash
-cp .env.example .env
-```
-Ensure you have the following from Supabase and BotFather:
-- `BOT_TOKEN`: Your API token.
-- `CHANNEL_ID`: The ID of your private channel.
-- `SUPABASE_URL`: Your project URL.
-- `SUPABASE_KEY`: Your service role key.
-
-### 3. Installation
-Install the necessary Python dependencies:
-```bash
+git clone <repo>
+cd tg-welcome-bot
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Running the Bot
-Launch the bot with:
+### 2. Configure `.env`
+
+```env
+BOT_TOKEN=<from @BotFather>
+CHANNEL_ID=-100xxxxxxxxxx
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_KEY=<service role key>
+ADMIN_IDS=123456789,987654321
+WELCOME_MESSAGE=Hey {first_name}! Welcome 🎉
+```
+
+### 3. Supabase table
+
+Run in the Supabase SQL editor:
+
+```sql
+create table users (
+  id          bigserial primary key,
+  telegram_id bigint unique not null,
+  username    text,
+  first_name  text,
+  last_name   text,
+  source      text,
+  status      text default 'approved',
+  joined_at   timestamptz default now()
+);
+```
+
+### 4. Enable join requests
+
+In Telegram: Channel Settings → Subscribers → enable **Join Requests**.  
+Add the bot as **Administrator** with permission to **Add Members**.
+
+### 5. Run
+
 ```bash
 python bot.py
 ```
 
-## Admin Commands
-- `/stats` - Get a detailed report on users and growth.
-- `/broadcast <message>` - Send a personalized DM to all users in the database.
+---
 
-## Support
-Built with 💖 using `python-telegram-bot` and `supabase-py`.
+## Project structure
 
 ```
-./venv/bin/python3 bot.py
+tg-welcome-bot/
+├── bot/
+│   ├── __init__.py
+│   ├── config.py          # Settings & validation (singleton)
+│   ├── database.py        # Supabase operations
+│   ├── messages.py        # All user-facing message templates
+│   └── handlers/
+│       ├── __init__.py
+│       ├── join.py        # ChatJoinRequest handler
+│       └── admin.py       # /stats /users /broadcast
+├── bot.py                 # Entry point
+├── .env                   # Secrets (never commit)
+├── .env.example
+├── requirements.txt
+└── README.md
 ```
+
+---
+
+## Admin commands
+
+| Command | Description |
+|---|---|
+| `/stats` | Show total & today's member count |
+| `/users` | List up to 50 registered users |
+| `/broadcast Hello!` | Send "Hello!" to everyone in DB |
