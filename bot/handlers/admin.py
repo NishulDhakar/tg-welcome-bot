@@ -6,6 +6,7 @@ Admin-only commands:
   /stats     – total & today user counts
   /users     – paginated user list (up to 50)
   /broadcast – send a DM to every registered user
+  /addchannel – Add a new authorized channel
 
 Only Telegram IDs listed in ADMIN_IDS (.env) can use these commands.
 """
@@ -47,7 +48,8 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"👋 Hey {name}! Here are your admin commands:\n\n"
         "/stats — Total users & today's joins\n"
         "/users — List registered users (up to 50)\n"
-        "/broadcast `<message>` — DM everyone in the DB\n\n"
+        "/broadcast `<message>` — DM everyone in the DB\n"
+        "/addchannel — Add a new authorized channel\n\n"
         "_Type / to see command suggestions at any time._"
     )
     await update.message.reply_text(text, parse_mode=constants.ParseMode.MARKDOWN)
@@ -137,3 +139,54 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "Broadcast by admin %d → delivered=%d failed=%d",
         update.effective_user.id, delivered, failed,
     )
+
+# ── /addchannel ───────────────────────────────────────────────────────────────
+async def handle_add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start the process of adding a new authorized channel."""
+    if not await _admin_only(update):
+        return
+
+    # Check if ID was provided as an argument
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) > 1:
+        await _process_channel_id(update, context, parts[1].strip())
+        return
+
+    # No ID provided → ask for it
+    context.user_data["awaiting_channel_id"] = True
+    await update.message.reply_text(
+        "📝 Please send me the **Channel ID** you want to authorize.\n\n"
+        "Example: `-1001234567890`",
+        parse_mode=constants.ParseMode.MARKDOWN,
+    )
+
+
+async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle plain text messages from admins (e.g. for /addchannel state)."""
+    if not await _admin_only(update):
+        return
+
+    if context.user_data.get("awaiting_channel_id"):
+        await _process_channel_id(update, context, update.message.text.strip())
+        return
+
+
+async def _process_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_id: str) -> None:
+    """Helper to validate and save a channel ID."""
+    try:
+        channel_id = int(raw_id)
+        settings.add_channel(channel_id)
+        
+        context.user_data["awaiting_channel_id"] = False
+        await update.message.reply_text(
+            f"✅ **Channel Authorized!**\n\n"
+            f"ID: `{channel_id}`\n"
+            f"The bot will now process join requests for this channel.",
+            parse_mode=constants.ParseMode.MARKDOWN,
+        )
+        logger.info("Admin %d added channel %d.", update.effective_user.id, channel_id)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Invalid ID. Please send a numeric ID (e.g., `-100...`).\n"
+            "Try again or type /start to cancel."
+        )

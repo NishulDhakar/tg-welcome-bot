@@ -11,20 +11,34 @@ import asyncio
 import logging
 
 from telegram import BotCommand, BotCommandScopeChat
-from telegram.ext import Application, ChatJoinRequestHandler, CommandHandler
+from telegram.ext import (
+    Application,
+    ChatJoinRequestHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 from bot.config import settings
-from bot.handlers.admin import handle_broadcast, handle_start, handle_stats, handle_users
+from bot.handlers.admin import (
+    handle_add_channel,
+    handle_admin_message,
+    handle_broadcast,
+    handle_start,
+    handle_stats,
+    handle_users,
+)
 from bot.handlers.join import handle_join_request
 
 logger = logging.getLogger(__name__)
 
 # Commands shown only to admins when they type "/"
 _ADMIN_COMMANDS = [
-    BotCommand("start",     "Show all available commands"),
-    BotCommand("stats",     "User statistics"),
-    BotCommand("users",     "List registered users"),
-    BotCommand("broadcast", "Send a message to all users"),
+    BotCommand("start",      "Show all available commands"),
+    BotCommand("stats",      "User statistics"),
+    BotCommand("users",      "List registered users"),
+    BotCommand("broadcast",  "Send a message to all users"),
+    BotCommand("addchannel", "Add an authorized channel"),
 ]
 
 
@@ -57,10 +71,14 @@ def build_app() -> Application:
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
 
     # Admin commands
-    app.add_handler(CommandHandler("start",     handle_start))
-    app.add_handler(CommandHandler("stats",     handle_stats))
-    app.add_handler(CommandHandler("users",     handle_users))
-    app.add_handler(CommandHandler("broadcast", handle_broadcast))
+    app.add_handler(CommandHandler("start",      handle_start))
+    app.add_handler(CommandHandler("stats",      handle_stats))
+    app.add_handler(CommandHandler("users",      handle_users))
+    app.add_handler(CommandHandler("broadcast",  handle_broadcast))
+    app.add_handler(CommandHandler("addchannel", handle_add_channel))
+
+    # Catch-all for admin messages (used for /addchannel input)
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_admin_message))
 
     return app
 

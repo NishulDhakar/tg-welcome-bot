@@ -12,6 +12,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.config import settings
 from bot.database import save_user
 from bot.messages import welcome
 
@@ -26,6 +27,13 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     user    = request.from_user
     chat_id = request.chat.id
     uid     = user.id
+
+    if not settings.is_channel_authorized(chat_id):
+        logger.warning(
+            "Unauthorized join request → chat=%s user=%s. Ignoring.",
+            chat_id, uid
+        )
+        return
 
     logger.info(
         "Join request → chat=%s user=%s (@%s)",
