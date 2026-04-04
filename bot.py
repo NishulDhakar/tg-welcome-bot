@@ -24,28 +24,46 @@ from bot.handlers.admin import (
     handle_add_channel,
     handle_admin_message,
     handle_broadcast,
+    handle_broadcast_channels,
+    handle_cancel,
+    handle_confirm,
     handle_start,
     handle_stats,
     handle_users,
 )
 from bot.handlers.join import handle_join_request
+from bot.handlers.schedule import (
+    handle_listmessages,
+    handle_removemessage,
+    handle_setmessage,
+    handle_settime,
+    initialize_schedules,
+)
 
 logger = logging.getLogger(__name__)
 
 # Commands shown only to admins when they type "/"
 _ADMIN_COMMANDS = [
-    BotCommand("start",      "Show all available commands"),
-    BotCommand("stats",      "User statistics"),
-    BotCommand("users",      "List registered users"),
-    BotCommand("broadcast",  "Send a message to all users"),
-    BotCommand("addchannel", "Add an authorized channel"),
+    BotCommand("start",             "Show all available commands"),
+    BotCommand("stats",             "User statistics"),
+    BotCommand("users",             "List registered users"),
+    BotCommand("broadcast",         "Send a message to all users"),
+    BotCommand("addchannel",        "Add an authorized channel"),
+    BotCommand("setmessage",        "Add a daily scheduled message"),
+    BotCommand("settime",           "Set daily send time for a channel"),
+    BotCommand("listmessages",      "List all scheduled messages"),
+    BotCommand("removemessage",     "Remove a scheduled message"),
+    BotCommand("broadcastchannels", "Broadcast to all admin channels"),
+    BotCommand("confirm",           "Confirm pending broadcast"),
+    BotCommand("cancel",            "Cancel pending operation"),
+    BotCommand("stats",              "User statistics"),
 ]
 
 
 async def _post_init(app: Application) -> None:
     """
     Called once after the bot connects.
-    Registers admin-scoped commands so "/" shows suggestions only for admins.
+    Registers admin-scoped commands and initializes scheduled jobs.
     """
     for admin_id in settings.admin_ids:
         try:
@@ -57,6 +75,9 @@ async def _post_init(app: Application) -> None:
         except Exception as exc:
             # Admin may not have started the bot yet – harmless
             logger.warning("Could not set commands for admin %d: %s", admin_id, exc)
+
+    # Restore scheduled daily messages from config
+    initialize_schedules(app)
 
 
 def build_app() -> Application:
@@ -76,6 +97,18 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("users",      handle_users))
     app.add_handler(CommandHandler("broadcast",  handle_broadcast))
     app.add_handler(CommandHandler("addchannel", handle_add_channel))
+
+    # Schedule commands
+    app.add_handler(CommandHandler("setmessage",        handle_setmessage))
+    app.add_handler(CommandHandler("settime",           handle_settime))
+    app.add_handler(CommandHandler("listmessages",      handle_listmessages))
+    app.add_handler(CommandHandler("removemessage",     handle_removemessage))
+
+    # Channel broadcast commands
+    app.add_handler(CommandHandler("broadcastchannels", handle_broadcast_channels))
+    app.add_handler(CommandHandler("confirm",           handle_confirm))
+    app.add_handler(CommandHandler("cancel",            handle_cancel))
+    app.add_handler(CommandHandler("stats",             handle_stats))
 
     # Catch-all for admin messages (used for /addchannel input)
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_admin_message))

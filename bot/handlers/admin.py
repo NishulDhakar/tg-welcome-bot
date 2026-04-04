@@ -2,11 +2,17 @@
 bot/handlers/admin.py
 ─────────────────────
 Admin-only commands:
-  /start     – welcome card with all available commands
-  /stats     – total & today user counts
-  /users     – paginated user list (up to 50)
-  /broadcast – send a DM to every registered user
+  /start      – welcome card with all available commands
+  /stats      – total & today user counts
+  /users      – paginated user list (up to 50)
+  /broadcast  – send a DM to every registered user
   /addchannel – Add a new authorized channel
+  /setmessage – Add a daily scheduled message to a channel
+  /settime    – Set daily send time for a channel
+  /listmessages – List all scheduled messages
+  /removemessage – Remove a scheduled message
+  /broadcastchannels – Broadcast a message to all admin channels
+  /confirm    – Confirm a pending channel broadcast
 
 Only Telegram IDs listed in ADMIN_IDS (.env) can use these commands.
 """
@@ -49,7 +55,13 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/stats — Total users & today's joins\n"
         "/users — List registered users (up to 50)\n"
         "/broadcast `<message>` — DM everyone in the DB\n"
-        "/addchannel — Add a new authorized channel\n\n"
+        "/addchannel — Add a new authorized channel\n"
+        "/setmessage `<channel_id> <message>` — Add a daily message\n"
+        "/settime `<channel_id> <HH:MM>` — Set daily send time (UTC)\n"
+        "/listmessages — List all scheduled messages\n"
+        "/removemessage `<channel_id> <#>` — Remove a scheduled message\n"
+        "/broadcastchannels `<message>` — Send to all admin channels\n"
+        "/confirm — Confirm pending channel broadcast\n\n"
         "_Type / to see command suggestions at any time._"
     )
     await update.message.reply_text(text, parse_mode=constants.ParseMode.MARKDOWN)
@@ -169,6 +181,139 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if context.user_data.get("awaiting_channel_id"):
         await _process_channel_id(update, context, update.message.text.strip())
         return
+
+
+# ── /broadcastchannels ───────────────────────────────────────────────────
+async def handle_broadcast_channels(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Preview a broadcast message and list target channels."""
+    if not await _admin_only(update):
+        return
+
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            "❌ Usage: /broadcastchannels <message>\n\n"
+            "Example:\n/broadcastchannels Hello all channels!"
+        )
+        return
+
+    message_text = parts[1].strip()
+
+    # Gather all known channels (authorized + scheduled)
+    all_channel_ids = set(settings.authorized_channels)
+    for ch_id_str in settings.channel_schedules:
+        try:
+            all_channel_ids.add(int(ch_id_str))
+        except ValueError:
+            pass
+
+    if not all_channel_ids:
+        await update.message.reply_text(
+            "ℹ️ No channels configured. Add channels with /addchannel first."
+        )
+        return
+
+    await update.message.reply_text("🔍 Checking admin status in channels…")
+
+    admin_channels = []
+    for ch_id in all_channel_ids:
+        try:
+            member = await context.bot.get_chat_member(ch_id, context.bot.id)
+            if member.status in ("administrator", "creator"):
+                chat = await context.bot.get_chat(ch_id)
+                admin_channels.append({"id": ch_id, "title": chat.title or str(ch_id)})
+        except Exception as exc:
+            logger.warning("Could not check channel %d: %s", ch_id, exc)
+
+    if not admin_channels:
+        await update.message.reply_text(
+            "ℹ️ The bot is not an admin in any known channels."
+        )
+        return
+
+    context.user_data["pending_broadcast_channels"] = message_text
+    context.user_data["broadcast_channel_targets"] = admin_channels
+
+    channel_list = "\n".join(
+        f"  • {ch['title']} (`{ch['id']}`)" for ch in admin_channels
+    )
+    await update.message.reply_text(
+        f"📢 *Broadcast Preview*\n\n"
+        f"*Message:*\n{message_text}\n\n"
+        f"*Will be sent to {len(admin_channels)} channel(s):*\n{channel_list}\n\n"
+        f"Type /confirm to send or /cancel to abort.",
+        parse_mode=constants.ParseMode.MARKDOWN,
+    )
+    logger.info(
+        "Admin %d prepared channel broadcast to %d channels.",
+        update.effective_user.id, len(admin_channels),
+    )
+
+
+# ── /confirm ──────────────────────────────────────────────────────────
+async def handle_confirm(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Confirm and send a pending channel broadcast."""
+    if not await _admin_only(update):
+        return
+
+    message_text = context.user_data.pop("pending_broadcast_channels", None)
+    targets = context.user_data.pop("broadcast_channel_targets", None)
+
+    if not message_text or not targets:
+        await update.message.reply_text(
+            "ℹ️ Nothing to confirm. Use /broadcastchannels first."
+        )
+        return
+
+    status = await update.message.reply_text(
+        f"🚀 Broadcasting to {len(targets)} channel(s)…"
+    )
+
+    delivered = 0
+    failed = 0
+
+    for ch in targets:
+        try:
+            await context.bot.send_message(chat_id=ch["id"], text=message_text)
+            delivered += 1
+        except Exception as exc:
+            logger.warning("Channel broadcast failed → %s: %s", ch["id"], exc)
+            failed += 1
+
+    await status.edit_text(
+        f"✅ Channel broadcast complete!\n\n"
+        f"📨 Delivered: {delivered}\n"
+        f"❌ Failed: {failed}"
+    )
+    logger.info(
+        "Channel broadcast by admin %d → delivered=%d failed=%d",
+        update.effective_user.id, delivered, failed,
+    )
+
+
+# ── /cancel ───────────────────────────────────────────────────────────
+async def handle_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Cancel any pending operation."""
+    if not await _admin_only(update):
+        return
+
+    cleared = False
+    if context.user_data.pop("pending_broadcast_channels", None):
+        context.user_data.pop("broadcast_channel_targets", None)
+        cleared = True
+    if context.user_data.pop("awaiting_channel_id", None):
+        cleared = True
+
+    if cleared:
+        await update.message.reply_text("✅ Operation cancelled.")
+    else:
+        await update.message.reply_text("ℹ️ Nothing to cancel.")
 
 
 async def _process_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_id: str) -> None:

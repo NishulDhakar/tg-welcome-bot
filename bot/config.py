@@ -9,7 +9,7 @@ import os
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import List, Set
+from typing import Any, Dict, List, Set
 
 from dotenv import load_dotenv
 
@@ -35,6 +35,7 @@ class Settings:
     admin_ids: List[int] = field(default_factory=list)
     welcome_message: str = "Hey {first_name}! Welcome! 🎉"
     authorized_channels: Set[int] = field(default_factory=set)
+    channel_schedules: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def is_admin(self, user_id: int) -> bool:
         return user_id in self.admin_ids
@@ -52,10 +53,38 @@ class Settings:
             self.authorized_channels.remove(chat_id)
             self._save_dynamic_config()
 
+    # ── Scheduled messages ────────────────────────────────────────────────────
+    def add_scheduled_message(self, channel_id: int, message: str) -> None:
+        key = str(channel_id)
+        if key not in self.channel_schedules:
+            self.channel_schedules[key] = {"time": None, "messages": []}
+        self.channel_schedules[key]["messages"].append(message)
+        self._save_dynamic_config()
+
+    def remove_scheduled_message(self, channel_id: int, index: int) -> bool:
+        key = str(channel_id)
+        schedule = self.channel_schedules.get(key)
+        if not schedule or index < 0 or index >= len(schedule.get("messages", [])):
+            return False
+        schedule["messages"].pop(index)
+        if not schedule["messages"]:
+            del self.channel_schedules[key]
+        self._save_dynamic_config()
+        return True
+
+    def set_schedule_time(self, channel_id: int, time_str: str) -> None:
+        key = str(channel_id)
+        if key not in self.channel_schedules:
+            self.channel_schedules[key] = {"time": time_str, "messages": []}
+        else:
+            self.channel_schedules[key]["time"] = time_str
+        self._save_dynamic_config()
+
     def _save_dynamic_config(self) -> None:
         """Persist dynamic settings to JSON."""
         data = {
-            "authorized_channels": list(self.authorized_channels)
+            "authorized_channels": list(self.authorized_channels),
+            "channel_schedules": self.channel_schedules,
         }
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -82,9 +111,6 @@ def _load_settings() -> Settings:
     bot_token    = os.getenv("BOT_TOKEN", "").strip()
     supabase_url = os.getenv("SUPABASE_URL", "").strip()
     supabase_key = os.getenv("SUPABASE_KEY", "").strip()
-    
-    # CHANNEL_ID from env is now optional (legacy support)
-    raw_channel_id = os.getenv("CHANNEL_ID", "").strip()
 
     for name, val in [
         ("BOT_TOKEN", bot_token),
@@ -118,13 +144,7 @@ def _load_settings() -> Settings:
     # Load dynamic config
     dynamic_config = _load_dynamic_config()
     authorized_channels = set(dynamic_config.get("authorized_channels", []))
-
-    # Incorporate legacy CHANNEL_ID if present
-    if raw_channel_id:
-        try:
-            authorized_channels.add(int(raw_channel_id))
-        except ValueError:
-            logger.warning("Legacy CHANNEL_ID in .env is not a valid integer: %s", raw_channel_id)
+    channel_schedules = dynamic_config.get("channel_schedules", {})
 
     settings = Settings(
         bot_token=bot_token,
@@ -133,6 +153,7 @@ def _load_settings() -> Settings:
         admin_ids=admin_ids,
         welcome_message=welcome_message,
         authorized_channels=authorized_channels,
+        channel_schedules=channel_schedules,
     )
 
     logger.info(
