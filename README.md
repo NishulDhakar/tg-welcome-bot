@@ -11,10 +11,13 @@ Admins can broadcast a message to all registered users.
 |---|---|
 | **Auto-approve** | Instantly approves every join request to your channel |
 | **Welcome DM** | Sends a personalized DM to each new member |
+| **Welcome Button** | Optional inline button in the welcome DM |
 | **User DB** | Saves every member to Supabase |
 | `/stats` | Total users + joined today |
 | `/users` | List of registered users (admin only) |
 | `/broadcast` | Send a DM to all users (admin only) |
+| `/setwelcome` | Update the welcome text and optional button |
+| `/setmessage` | Schedule a copied Telegram post or daily text |
 
 ---
 
@@ -38,6 +41,8 @@ SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_KEY=<service role key>
 ADMIN_IDS=123456789,987654321
 WELCOME_MESSAGE=Hey {first_name}! Welcome 🎉
+WELCOME_BUTTON_TEXT=Join Community
+WELCOME_BUTTON_URL=https://example.com
 ```
 
 ### 3. Supabase table
@@ -99,3 +104,18 @@ tg-welcome-bot/
 | `/stats` | Show total & today's member count |
 | `/users` | List up to 50 registered users |
 | `/broadcast Hello!` | Send "Hello!" to everyone in DB |
+| `/setwelcome Hi {first_name}! \| Join now \| https://example.com` | Update welcome text and button |
+| `/setmessage -1001234567890 https://t.me/channelname/25 09:30` | Copy a post daily at 09:30 IST |
+| `/settime -1001234567890 18:00` | Change a channel's schedule time in IST |
+
+## Scheduled post links
+
+Use a Telegram post URL with `/setmessage` to copy that post into the target channel every day.
+The bot uses `copyMessage`, so Telegram hides the original sender name.
+
+Supported link formats:
+
+- `https://t.me/channelname/25`
+- `https://t.me/c/1234567890/25`
+
+For private source channels, the bot must already have access to the source post.

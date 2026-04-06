@@ -5,6 +5,8 @@ All user-facing message templates in one place.
 Edit text here without touching handler logic.
 """
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from bot.config import settings
 
 # ── Broadcast prefix ──────────────────────────────────────────────────────────
@@ -15,6 +17,15 @@ BROADCAST_PREFIX = "📢 *Broadcast*\n\n"
 def welcome(first_name: str) -> str:
     name = first_name.strip() if first_name else "there"
     return settings.welcome_message.replace("{first_name}", name)
+
+
+def welcome_markup() -> InlineKeyboardMarkup | None:
+    if not settings.welcome_button_text or not settings.welcome_button_url:
+        return None
+
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(settings.welcome_button_text, url=settings.welcome_button_url)]]
+    )
 
 
 # ── Admin: /stats ─────────────────────────────────────────────────────────────

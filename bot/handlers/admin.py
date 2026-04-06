@@ -19,6 +19,7 @@ Only Telegram IDs listed in ADMIN_IDS (.env) can use these commands.
 
 import asyncio
 import logging
+from urllib.parse import urlparse
 
 from telegram import Update, constants
 from telegram.ext import ContextTypes
@@ -56,8 +57,9 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/users — List registered users (up to 50)\n"
         "/broadcast `<message>` — DM everyone in the DB\n"
         "/addchannel — Add a new authorized channel\n"
-        "/setmessage `<channel_id> <message>` — Add a daily message\n"
-        "/settime `<channel_id> <HH:MM>` — Set daily send time (UTC)\n"
+        "/setmessage `<channel_id> <post_link> <HH:MM>` — Daily copied post\n"
+        "/settime `<channel_id> <HH:MM>` — Set daily send time (IST)\n"
+        "/setwelcome `<message> | <button text> | <button url>` — Update welcome DM\n"
         "/listmessages — List all scheduled messages\n"
         "/removemessage `<channel_id> <#>` — Remove a scheduled message\n"
         "/broadcastchannels `<message>` — Send to all admin channels\n"
@@ -66,6 +68,89 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
     await update.message.reply_text(text, parse_mode=constants.ParseMode.MARKDOWN)
     logger.info("Start/help sent to admin %d.", update.effective_user.id)
+
+
+def _is_valid_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+async def handle_setwelcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Update the welcome message and optional button."""
+    if not await _admin_only(update):
+        return
+
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            "❌ Usage:\n"
+            "/setwelcome <message>\n"
+            "/setwelcome <message> | <button text> | <button url>\n\n"
+            "Use `none` for button text and url to remove the button.",
+            parse_mode=constants.ParseMode.MARKDOWN,
+        )
+        return
+
+    raw_value = parts[1].strip()
+    segments = [segment.strip() for segment in raw_value.split("|")]
+    message_text = segments[0]
+
+    if not message_text:
+        await update.message.reply_text("❌ Welcome message cannot be empty.")
+        return
+
+    button_text = settings.welcome_button_text
+    button_url = settings.welcome_button_url
+
+    if len(segments) == 3:
+        candidate_text = segments[1]
+        candidate_url = segments[2]
+
+        if candidate_text.lower() == "none" and candidate_url.lower() == "none":
+            button_text = None
+            button_url = None
+        else:
+            if not candidate_text or not candidate_url:
+                await update.message.reply_text(
+                    "❌ Button text and URL must both be provided, or use `none | none`.",
+                    parse_mode=constants.ParseMode.MARKDOWN,
+                )
+                return
+            if not _is_valid_http_url(candidate_url):
+                await update.message.reply_text(
+                    "❌ Button URL must start with http:// or https://"
+                )
+                return
+
+            button_text = candidate_text
+            button_url = candidate_url
+    elif len(segments) != 1:
+        await update.message.reply_text(
+            "❌ Use either only the message, or `message | button text | button url`.",
+            parse_mode=constants.ParseMode.MARKDOWN,
+        )
+        return
+
+    settings.set_welcome_message(message_text)
+    settings.set_welcome_button(button_text, button_url)
+
+    response_lines = [
+        "✅ Welcome message updated.",
+        "",
+        f"📝 Message: {message_text}",
+    ]
+    if button_text and button_url:
+        response_lines.extend(
+            [
+                f"🔘 Button: {button_text}",
+                f"🔗 URL: {button_url}",
+            ]
+        )
+    else:
+        response_lines.append("🔘 Button: disabled")
+
+    await update.message.reply_text("\n".join(response_lines))
+    logger.info("Admin %d updated the welcome message.", update.effective_user.id)
 
 
 # ── /stats ────────────────────────────────────────────────────────────────────

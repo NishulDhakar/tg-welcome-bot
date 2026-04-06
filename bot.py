@@ -27,6 +27,7 @@ from bot.handlers.admin import (
     handle_broadcast_channels,
     handle_cancel,
     handle_confirm,
+    handle_setwelcome,
     handle_start,
     handle_stats,
     handle_users,
@@ -49,14 +50,14 @@ _ADMIN_COMMANDS = [
     BotCommand("users",             "List registered users"),
     BotCommand("broadcast",         "Send a message to all users"),
     BotCommand("addchannel",        "Add an authorized channel"),
-    BotCommand("setmessage",        "Add a daily scheduled message"),
-    BotCommand("settime",           "Set daily send time for a channel"),
+    BotCommand("setmessage",        "Schedule a copied post or daily text"),
+    BotCommand("settime",           "Set daily send time in IST"),
+    BotCommand("setwelcome",        "Customize welcome message and button"),
     BotCommand("listmessages",      "List all scheduled messages"),
     BotCommand("removemessage",     "Remove a scheduled message"),
     BotCommand("broadcastchannels", "Broadcast to all admin channels"),
     BotCommand("confirm",           "Confirm pending broadcast"),
     BotCommand("cancel",            "Cancel pending operation"),
-    BotCommand("stats",              "User statistics"),
 ]
 
 
@@ -97,6 +98,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("users",      handle_users))
     app.add_handler(CommandHandler("broadcast",  handle_broadcast))
     app.add_handler(CommandHandler("addchannel", handle_add_channel))
+    app.add_handler(CommandHandler("setwelcome", handle_setwelcome))
 
     # Schedule commands
     app.add_handler(CommandHandler("setmessage",        handle_setmessage))

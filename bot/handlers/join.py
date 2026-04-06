@@ -14,7 +14,7 @@ from telegram.ext import ContextTypes
 
 from bot.config import settings
 from bot.database import save_user
-from bot.messages import welcome
+from bot.messages import welcome, welcome_markup
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_message(
             chat_id=uid,
             text=welcome(user.first_name),
+            reply_markup=welcome_markup(),
         )
         logger.info("Welcome DM sent to user %d.", uid)
     except Exception as exc:

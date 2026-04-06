@@ -9,7 +9,7 @@ import os
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from dotenv import load_dotenv
 
@@ -34,6 +34,8 @@ class Settings:
     supabase_key: str
     admin_ids: List[int] = field(default_factory=list)
     welcome_message: str = "Hey {first_name}! Welcome! 🎉"
+    welcome_button_text: Optional[str] = None
+    welcome_button_url: Optional[str] = None
     authorized_channels: Set[int] = field(default_factory=set)
     channel_schedules: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
@@ -53,12 +55,42 @@ class Settings:
             self.authorized_channels.remove(chat_id)
             self._save_dynamic_config()
 
+    def set_welcome_message(self, message: str) -> None:
+        self.welcome_message = message
+        self._save_dynamic_config()
+
+    def set_welcome_button(self, text: Optional[str], url: Optional[str]) -> None:
+        self.welcome_button_text = text or None
+        self.welcome_button_url = url or None
+        self._save_dynamic_config()
+
     # ── Scheduled messages ────────────────────────────────────────────────────
     def add_scheduled_message(self, channel_id: int, message: str) -> None:
         key = str(channel_id)
         if key not in self.channel_schedules:
             self.channel_schedules[key] = {"time": None, "messages": []}
         self.channel_schedules[key]["messages"].append(message)
+        self._save_dynamic_config()
+
+    def add_scheduled_copy_message(
+        self,
+        channel_id: int,
+        source_chat_id: Any,
+        message_id: int,
+        source_link: str,
+    ) -> None:
+        key = str(channel_id)
+        if key not in self.channel_schedules:
+            self.channel_schedules[key] = {"time": None, "messages": []}
+
+        self.channel_schedules[key]["messages"].append(
+            {
+                "kind": "copy",
+                "source_chat_id": source_chat_id,
+                "message_id": message_id,
+                "source_link": source_link,
+            }
+        )
         self._save_dynamic_config()
 
     def remove_scheduled_message(self, channel_id: int, index: int) -> bool:
@@ -83,6 +115,11 @@ class Settings:
     def _save_dynamic_config(self) -> None:
         """Persist dynamic settings to JSON."""
         data = {
+            "welcome": {
+                "message": self.welcome_message,
+                "button_text": self.welcome_button_text,
+                "button_url": self.welcome_button_url,
+            },
             "authorized_channels": list(self.authorized_channels),
             "channel_schedules": self.channel_schedules,
         }
@@ -140,11 +177,21 @@ def _load_settings() -> Settings:
     welcome_message = os.getenv(
         "WELCOME_MESSAGE", "Hey {first_name}! Welcome! 🎉"
     )
+    welcome_button_text = os.getenv("WELCOME_BUTTON_TEXT", "").strip() or None
+    welcome_button_url = os.getenv("WELCOME_BUTTON_URL", "").strip() or None
 
     # Load dynamic config
     dynamic_config = _load_dynamic_config()
+    welcome_config = dynamic_config.get("welcome", {})
     authorized_channels = set(dynamic_config.get("authorized_channels", []))
     channel_schedules = dynamic_config.get("channel_schedules", {})
+
+    if "message" in welcome_config and welcome_config.get("message"):
+        welcome_message = welcome_config["message"]
+    if "button_text" in welcome_config:
+        welcome_button_text = welcome_config.get("button_text") or None
+    if "button_url" in welcome_config:
+        welcome_button_url = welcome_config.get("button_url") or None
 
     settings = Settings(
         bot_token=bot_token,
@@ -152,6 +199,8 @@ def _load_settings() -> Settings:
         supabase_key=supabase_key,
         admin_ids=admin_ids,
         welcome_message=welcome_message,
+        welcome_button_text=welcome_button_text,
+        welcome_button_url=welcome_button_url,
         authorized_channels=authorized_channels,
         channel_schedules=channel_schedules,
     )
